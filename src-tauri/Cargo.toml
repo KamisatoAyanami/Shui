@@ -1,0 +1,90 @@
+[package]
+name = "shui"
+version = "0.2.0"
+description = "一个专注喝水提醒的跨端桌面 App，关注打工人健康 💪 ，改善你的喝水习惯。"
+authors = ["KamisatoAyanami"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "shui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+lazy_static = "1.4.0"
+parking_lot = "0.12"
+tauri = { version = "2", features = [ "tray-icon", "macos-private-api", "image-ico" ] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-log = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-os = "2"
+tauri-plugin-dialog = "2"   
+tauri-plugin-fs = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-drag = "2"
+tauri-plugin-macos-permissions = "2"
+tauri-plugin-store = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
+chrono = { version = "0.4", features = ["serde"] }
+tauri-plugin-clipboard-manager = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+scopeguard = "1.2"
+winapi = { version = "0.3", features = [ "wtsapi32", "winuser", "winbase", "libloaderapi", "winnt", "powersetting"] }
+widestring = "1.0"  # 用于处理Windows宽字符
+# tauri-plugin-fs-pro.workspace = true
+# tauri-plugin-eco-window.workspace = true
+# tauri-plugin-eco-locale.workspace = true
+# tauri-plugin-eco-clipboard.workspace = true
+# tauri-plugin-eco-ocr.workspace = true
+# tauri-plugin-eco-paste.workspace = true
+# tauri-plugin-eco-autostart.workspace = true
+
+# [target."cfg(target_os = \"macos\")".dependencies]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-nspanel.workspace = true
+core-foundation = "0.9.4"
+core-graphics = "0.23.1"
+objc = "0.2.7"          # Objective-C 运行时绑定
+objc-foundation = "0.1" # Foundation 框架支持
+
+[dependencies.windows]
+version = "0.48"
+features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_LibraryLoader",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Power",  # 添加这一行
+]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus = "0.9.7"
+notify-rust = "4.9"
+x11-dl = "2.21.0"
+gtk = "0.18.1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
+
+[features]
+cargo-clippy = []

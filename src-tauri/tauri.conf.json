@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Shui",
+  "version": "0.2.20",
+  "identifier": "com.shui.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3000/",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon-tray.ico",
+      "iconAsTemplate": true,
+      "title": "Shui",
+      "id": "main-tray",
+      "showMenuOnLeftClick": true
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "Shui",
+        "url": "setting/",
+        "width": 680,
+        "height": 460,
+        "resizable": false,
+        "visible": true,
+        "maximizable": false,
+        "hiddenTitle": true,
+        "skipTaskbar": true,
+        "titleBarStyle": "Overlay",
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": [
+            "sidebar"
+          ],
+          "state": "active"
+        }
+      }
+    ]
+  },
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon_32x32.png",
+      "icons/icon_32x32@2x.png",
+      "icons/icon_128x128.png",
+      "icons/icon_128x128@2x.png",
+      "icons/icon_256x256.png",
+      "icons/icon_256x256@2x.png",
+      "icons/icon_512x512.png",
+      "icons/icon_512x512@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "icons/**/*"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMzOUFERENERDlCNzYxQTQKUldTa1liZlp6ZDJhd3lmUDh4TktmL092dVNuZlRXbWtiS2tYUm9uY29xRFdVOVZja0N6aDdpQUQK",
+      "endpoints": [
+        "https://github.com/KamisatoAyanami/Shui/releases/download/updater/latest.json"
+      ]
+    }
+  }
+}
