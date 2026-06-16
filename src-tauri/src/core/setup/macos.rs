@@ -1,6 +1,6 @@
 use crate::timer::IS_RUNNING;
 
-use std::thread::{self, sleep};
+use std::thread::{self};
 use std::time::Duration;
 
 use std::sync::atomic::Ordering;

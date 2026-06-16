@@ -42,8 +42,58 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Setup Apple code signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Skip if no Apple certificate is configured
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "⚠️  APPLE_CERTIFICATE secret not set — skipping code signing setup"
+            exit 0
+          fi
+
+          set -e
+          CERT_PATH="$RUNNER_TEMP/shui_build_cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/shui-signing.keychain-db"
+          KEYCHAIN_PASS="shui-ci-keychain-pass"
+
+          # Decode base64 certificate to a temporary p12 file
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERT_PATH"
+          echo "✅ Certificate decoded ($(wc -c < "$CERT_PATH") bytes)"
+
+          # Create a temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          echo "✅ Temporary keychain created"
+
+          # Import the certificate into the temporary keychain
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          echo "✅ Certificate imported into keychain"
+
+          # Allow codesign to access the keychain without GUI prompt
+          security set-key-partition-list \
+            -S "apple-tool:,apple:,codesign:" \
+            -s \
+            -k "$KEYCHAIN_PASS" \
+            "$KEYCHAIN_PATH"
+
+          # Make it the default keychain for this job
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          echo "✅ Keychain set as default"
+
+          # Verify the identity is available
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "✅ Signing identity verified"
+
       - name: Build Tauri (macOS ${{ matrix.label }})
-        # Skip updater signing for CI; remove pubkey check env if you have the key
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}

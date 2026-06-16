@@ -2,6 +2,7 @@ use tauri::{LogicalPosition, LogicalSize, Manager};
 use tauri_nspanel::cocoa::appkit::NSWindowCollectionBehavior;
 use tauri_nspanel::{ManagerExt, WebviewWindowExt};
 
+#[allow(non_upper_case_globals)]
 const NSWindowStyleMaskUtilityWindow: i32 = 1 << 7;
 
 // 窗口度量结构体
@@ -36,7 +37,7 @@ fn calculate_window_metrics(monitor: &tauri::Monitor) -> WindowMetrics {
 pub fn show_reminder(app_handle: &tauri::AppHandle) {
     println!("[macos] show_reminder");
 
-    if let Ok(panel) = app_handle.get_webview_panel("reminder_0") {
+    if let Ok(_panel) = app_handle.get_webview_panel("reminder_0") {
         if let Ok(monitors) = app_handle.available_monitors() {
             for (index, monitor) in monitors.iter().enumerate() {
                 let reminder_label = format!("reminder_{}", index);
@@ -127,7 +128,7 @@ fn show_or_create_reminder_window(app_handle: &tauri::AppHandle) {
 
 pub fn hide_reminder(app_handle: &tauri::AppHandle) {
     if let Ok(monitors) = app_handle.available_monitors() {
-        for (index, monitor) in monitors.iter().enumerate() {
+        for (index, _monitor) in monitors.iter().enumerate() {
             let reminder_label = format!("reminder_{}", index);
 
             println!("hide_reminder_windows: {}", reminder_label); // 打印 reminder_label 的值，以检查是否正确获取了窗口标签
