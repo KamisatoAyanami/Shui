@@ -115,6 +115,25 @@ pub fn start_timer() {
 }
 
 #[tauri::command]
+pub fn show_main_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        {
+            // macOS: Accessory 模式下需要先激活 app 再显示窗口
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn quit(app_handle: tauri::AppHandle) {
     app_handle.exit(0);
 }

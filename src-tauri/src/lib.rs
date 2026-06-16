@@ -45,6 +45,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::show_main_window,
             commands::call_reminder,
             commands::setting,
             commands::hide_reminder_windows,

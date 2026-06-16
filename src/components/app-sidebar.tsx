@@ -1,5 +1,5 @@
 "use client";
-import { AlarmClock, Keyboard, Settings, Info, Wine, BarChart3 } from "lucide-react";
+import { AlarmClock, Keyboard, Settings, Info, Wine, BarChart3, Home } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,11 @@ import {
 import { usePlatform } from "@/hooks/use-platform";
 
 const items = [
+  {
+    title: "首页",
+    url: "/",
+    icon: Home,
+  },
   {
     title: "通用",
     url: "/setting/",
@@ -52,7 +57,6 @@ export function AppSidebar() {
   const { isMacOS } = usePlatform();
 
   const pathname = usePathname();
-  console.log("pathname", pathname);
 
   return (
     <Sidebar collapsible="none" className={`${isMacOS ? "pt-8" : "pt-0"}`}>

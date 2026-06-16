@@ -1,9 +1,9 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { Progress } from "@/components/ui/progress";
-import { Plus } from "lucide-react";
+import { Plus, Settings } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { isTauri, safeInvoke } from "@/lib/tauri";
 
 interface KnownDrink {
   id: number;
@@ -34,13 +34,13 @@ export default function Home() {
   const loadData = async () => {
     try {
       const [d, g, t] = await Promise.all([
-        invoke<KnownDrink[]>("get_known_drinks"),
-        invoke<number>("get_daily_goal"),
-        invoke<number>("get_today_total"),
+        safeInvoke<KnownDrink[]>("get_known_drinks"),
+        safeInvoke<number>("get_daily_goal"),
+        safeInvoke<number>("get_today_total"),
       ]);
-      setDrinks(d);
-      setGold(g);
-      setTodayTotal(t);
+      if (d) setDrinks(d);
+      if (g != null) setGold(g);
+      if (t != null) setTodayTotal(t);
     } catch {}
   };
 
@@ -50,7 +50,7 @@ export default function Home() {
 
   const recordDrink = async (name: string, ml: number) => {
     setTodayTotal((prev) => prev + ml);
-    await invoke("add_record", { drinkName: name, amountMl: ml });
+    await safeInvoke("add_record", { drinkName: name, amountMl: ml });
   };
 
   const handleCustomRecord = async () => {
@@ -68,7 +68,14 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 to-white p-8">
       <div className="max-w-md mx-auto">
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 relative">
+          <Link
+            href="/setting"
+            className="absolute right-0 top-0 p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+            title="设置"
+          >
+            <Settings className="w-5 h-5" />
+          </Link>
           <h1 className="text-3xl font-bold text-blue-600 mb-2">喝水小助手</h1>
           <p className="text-muted-foreground">保持健康饮水习惯</p>
         </div>
@@ -85,7 +92,8 @@ export default function Home() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border p-6 mb-6">
-          <h2 className="text-sm font-medium text-gray-600 mb-4">快捷记录</h2>
+          <h2 className="text-sm font-medium text-gray-600 mb-1">快捷记录</h2>
+          <p className="text-xs text-muted-foreground mb-4">点击下方饮品按钮即可记录一次喝水</p>
           <div className="grid grid-cols-4 gap-3">
             {drinks.map((drink) => (
               <DrinkButton
@@ -153,9 +161,14 @@ function DrinkButton({
   const [iconUrl, setIconUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (drink.icon_path) {
-      invoke<string>("get_drink_icon_abs_path", { filename: drink.icon_path })
-        .then((absPath) => setIconUrl(convertFileSrc(absPath)))
+    if (drink.icon_path && isTauri()) {
+      Promise.all([
+        safeInvoke<string>("get_drink_icon_abs_path", { filename: drink.icon_path }),
+        import("@tauri-apps/api/core"),
+      ])
+        .then(([absPath, { convertFileSrc }]) => {
+          if (absPath) setIconUrl(convertFileSrc(absPath));
+        })
         .catch(() => setIconUrl(null));
     }
   }, [drink.icon_path]);

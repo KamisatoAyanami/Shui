@@ -11,6 +11,9 @@ pub fn check_whitelist(whitelist_apps: &Vec<String>) -> bool {
                 let app: *mut Object = msg_send![workspace, frontmostApplication];
                 if !app.is_null() {
                     let url: *mut Object = msg_send![app, bundleURL];
+                    if url.is_null() {
+                        return false;
+                    }
                     let name = get_mditem_display_name_by_url(url);
                     if let Some(name) = name {
                         return whitelist_apps.contains(&name.trim_end_matches(".app").to_string());
@@ -73,10 +76,21 @@ pub fn get_self_bundle_path() -> String {
     }
 }
 
-pub unsafe fn get_mditem_display_name_by_url(url: *const Object) -> Option<String> {
-    let cls = class!(NSMetadataItem);
-    let alloc: *mut Object = msg_send![cls, alloc];
+pub unsafe fn get_mditem_display_name_by_url(url: *mut Object) -> Option<String> {
+    if url.is_null() {
+        return None;
+    }
+
+    let alloc: *mut Object = msg_send![class!(NSMetadataItem), alloc];
+    if alloc.is_null() {
+        return None;
+    }
+
     let item: *mut Object = msg_send![alloc, initWithURL:url];
+    if item.is_null() {
+        return None;
+    }
+
     let name: *mut Object =
         msg_send![item, valueForAttribute: NSString::from_str("kMDItemDisplayName")];
 

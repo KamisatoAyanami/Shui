@@ -1,18 +1,9 @@
 "use client";
-import { invoke } from "@tauri-apps/api/core";
-import {
-  isRegistered,
-  register,
-  unregisterAll,
-} from "@tauri-apps/plugin-global-shortcut";
 import { useEffect, useState } from "react";
-import { listen, TauriEvent } from "@tauri-apps/api/event";
 import { Progress } from "@/components/ui/progress";
 import { ArrowRight, Plus } from "lucide-react";
 import "./index.css";
-import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { usePlatform } from "@/hooks/use-platform";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,6 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { isTauri, safeListen, safeInvoke } from "@/lib/tauri";
 
 interface KnownDrink {
   id: number;
@@ -31,17 +23,27 @@ interface KnownDrink {
   sort_order: number;
 }
 
-function hideWindowAction() {
-  invoke("hide_reminder_windows");
-  invoke("reset_timer");
-  unregisterAll();
+async function hideWindowAction() {
+  safeInvoke("hide_reminder_windows");
+  safeInvoke("reset_timer");
+  // Only unregister shortcuts when running in Tauri
+  if (isTauri()) {
+    try {
+      const { unregisterAll } = await import("@tauri-apps/plugin-global-shortcut");
+      unregisterAll();
+    } catch { /* ignore */ }
+  }
 }
 
 async function registerEscShortcut() {
-  if (await isRegistered("Esc")) return;
-  register("Esc", async () => {
-    hideWindowAction();
-  });
+  if (!isTauri()) return;
+  try {
+    const { isRegistered, register } = await import("@tauri-apps/plugin-global-shortcut");
+    if (await isRegistered("Esc")) return;
+    register("Esc", async () => {
+      hideWindowAction();
+    });
+  } catch { /* ignore */ }
 }
 
 const playSound = () => {
@@ -85,13 +87,13 @@ export default function ReminderPage() {
   const loadData = async () => {
     try {
       const [d, g, t] = await Promise.all([
-        invoke<KnownDrink[]>("get_known_drinks"),
-        invoke<number>("get_daily_goal"),
-        invoke<number>("get_today_total"),
+        safeInvoke<KnownDrink[]>("get_known_drinks"),
+        safeInvoke<number>("get_daily_goal"),
+        safeInvoke<number>("get_today_total"),
       ]);
-      setDrinks(d);
-      setGold(g);
-      setTodayTotal(t);
+      if (d) setDrinks(d);
+      if (g != null) setGold(g);
+      if (t != null) setTodayTotal(t);
     } catch {
     }
   };
@@ -112,29 +114,39 @@ export default function ReminderPage() {
   }, [todayTotal]);
 
   useEffect(() => {
+    const unlistenFns: Array<() => void> = [];
+
     registerEscShortcut();
 
-    listen("countdown", (event) => {
+    safeListen("countdown", (event) => {
       setCountdown(event.payload as number);
       if (event.payload === 0) {
         setTimeout(hideWindowAction, 500);
       }
-    });
+    }).then((fn) => { unlistenFns.push(fn); });
 
-    listen("reminder_already_hidden", () => {
-      unregisterAll();
-    });
+    safeListen("reminder_already_hidden", () => {
+      if (isTauri()) {
+        import("@tauri-apps/plugin-global-shortcut").then(({ unregisterAll }) => {
+          unregisterAll();
+        }).catch(() => {});
+      }
+    }).then((fn) => { unlistenFns.push(fn); });
 
-    listen(TauriEvent.WINDOW_FOCUS, () => {
+    safeListen("tauri://focus", () => {
       registerEscShortcut();
-    });
+    }).then((fn) => { unlistenFns.push(fn); });
 
-    currentMonitor().then((mo) => {
-      setMonitorName(mo?.name || "");
-    });
+    if (isTauri()) {
+      import("@tauri-apps/api/window").then(({ currentMonitor }) => {
+        currentMonitor().then((mo) => {
+          setMonitorName(mo?.name || "");
+        }).catch(() => {});
+      }).catch(() => {});
+    }
 
     return () => {
-      unregisterAll();
+      unlistenFns.forEach((fn) => fn());
     };
   }, []);
 
@@ -158,19 +170,23 @@ export default function ReminderPage() {
 
   useEffect(() => {
     if (!monitorName) return;
-    listen(TauriEvent.WINDOW_MOVED, async () => {
-      const mo = await currentMonitor();
-      if (mo?.name !== monitorName) {
-        const win = await getCurrentWindow();
-        invoke("hide_reminder_window", { label: win.label });
-      }
+    safeListen("tauri://move", async () => {
+      if (!isTauri()) return;
+      try {
+        const { currentMonitor, getCurrentWindow } = await import("@tauri-apps/api/window");
+        const mo = await currentMonitor();
+        if (mo?.name !== monitorName) {
+          const win = await getCurrentWindow();
+          safeInvoke("hide_reminder_window", { label: win.label });
+        }
+      } catch { /* ignore */ }
     });
   }, [monitorName]);
 
   const recordDrink = async (name: string, ml: number) => {
     const newTotal = todayTotal + ml;
     setTodayTotal(newTotal);
-    await invoke("add_record", { drinkName: name, amountMl: ml });
+    await safeInvoke("add_record", { drinkName: name, amountMl: ml });
 
     if (newTotal >= gold) {
       playSound();
@@ -301,9 +317,14 @@ function DrinkButton({
   const [iconUrl, setIconUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (drink.icon_path) {
-      invoke<string>("get_drink_icon_abs_path", { filename: drink.icon_path })
-        .then((absPath) => setIconUrl(convertFileSrc(absPath)))
+    if (drink.icon_path && isTauri()) {
+      Promise.all([
+        safeInvoke<string>("get_drink_icon_abs_path", { filename: drink.icon_path }),
+        import("@tauri-apps/api/core"),
+      ])
+        .then(([absPath, { convertFileSrc }]) => {
+          if (absPath) setIconUrl(convertFileSrc(absPath));
+        })
         .catch(() => setIconUrl(null));
     }
   }, [drink.icon_path]);

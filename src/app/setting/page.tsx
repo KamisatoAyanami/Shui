@@ -4,13 +4,11 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useEffect, useState } from "react";
-import { load } from "@tauri-apps/plugin-store";
 import { useTray } from "@/hooks/use-tray";
-import { enable, isEnabled, disable } from "@tauri-apps/plugin-autostart";
-import { invoke } from "@tauri-apps/api/core";
 import { STORE_NAME } from "@/lib/constants";
 import { usePlatform } from "@/hooks/use-platform";
 import { getGeneralConfig } from "@/utils/store";
+import { isTauri, safeInvoke } from "@/lib/tauri";
 
 interface WeightInfo {
   weight: number | null;
@@ -36,10 +34,15 @@ export default function Home() {
 
   useEffect(() => {
     async function loadConfig() {
-      const [generalSetting, isAutoStart] = await Promise.all([
-        getGeneralConfig(),
-        isEnabled(),
-      ]);
+      let isAutoStart = false;
+      if (isTauri()) {
+        try {
+          const { isEnabled } = await import("@tauri-apps/plugin-autostart");
+          isAutoStart = await isEnabled();
+        } catch { /* ignore */ }
+      }
+
+      const generalSetting = await getGeneralConfig();
 
       setConfig({
         ...config,
@@ -55,53 +58,67 @@ export default function Home() {
 
   const loadWeightInfo = async () => {
     try {
-      const info = await invoke<WeightInfo>("get_weight_info");
-      setWeightInfo(info);
-      if (info.weight) setWeightInput(String(info.weight));
-      setMultiplier(info.multiplier);
+      const info = await safeInvoke<WeightInfo>("get_weight_info");
+      if (info) {
+        setWeightInfo(info);
+        if (info.weight) setWeightInput(String(info.weight));
+        setMultiplier(info.multiplier);
+      }
     } catch {
     }
   };
 
-  const saveConfig = async (filed: string, checked: boolean) => {
-    const store = await load(STORE_NAME.config, { autoSave: false });
-    const oldConfig = await store.get<{ value: number }>("general");
+  const saveConfig = async (field: string, checked: boolean) => {
+    if (!isTauri()) {
+      setConfig({ ...config, [field]: checked });
+      return;
+    }
 
-    setConfig({
-      ...config,
-      [filed]: checked,
-    });
+    try {
+      const { load } = await import("@tauri-apps/plugin-store");
+      const store = await load(STORE_NAME.config, { autoSave: false });
+      const oldConfig = await store.get<{ value: number }>("general");
 
-    await store.set("general", {
-      ...oldConfig,
-      [filed]: checked,
-    });
-    await store.save();
+      setConfig({
+        ...config,
+        [field]: checked,
+      });
+
+      await store.set("general", {
+        ...oldConfig,
+        [field]: checked,
+      });
+      await store.save();
+    } catch { /* ignore */ }
   };
 
   const handleAutoStartChange = async (checked: boolean) => {
     saveConfig("isAutoStart", checked);
 
-    if (checked) {
-      enable();
-      console.log("isAutoStart", await isEnabled());
-    } else {
-      disable();
-      console.log("isAutoStart", await isEnabled());
-    }
+    if (!isTauri()) return;
+    try {
+      const { enable, disable } = await import("@tauri-apps/plugin-autostart");
+      if (checked) {
+        enable();
+      } else {
+        disable();
+      }
+    } catch { /* ignore */ }
   };
 
   const handleSetWeight = async () => {
     const w = parseFloat(weightInput);
     if (isNaN(w) || w <= 0) return;
-    const goal = await invoke<number>("set_weight", { weightKg: w });
-    setWeightInfo({ weight: w, multiplier, goal_ml: goal, source: "auto" });
+    const goal = await safeInvoke<number>("set_weight", { weightKg: w });
+    if (goal != null) {
+      setWeightInfo({ weight: w, multiplier, goal_ml: goal, source: "auto" });
+    }
   };
 
   const handleSetManualGoal = async () => {
     const g = parseInt(manualGoal);
     if (isNaN(g) || g <= 0) return;
-    await invoke("set_manual_goal", { goalMl: g });
+    await safeInvoke("set_manual_goal", { goalMl: g });
     setWeightInfo((prev) => prev ? { ...prev, goal_ml: g, source: "manual" } : null);
     setShowGoalInput(false);
     setManualGoal("");
@@ -140,7 +157,7 @@ export default function Home() {
           checked={config.isCountDown}
           onCheckedChange={async (checked) => {
             await saveConfig("isCountDown", checked);
-            invoke("reset_timer");
+            safeInvoke("reset_timer");
           }}
         />
       </div>

@@ -11,15 +11,12 @@ export function useUpdaterCheck() {
   } | null>(null);
 
   const checkForUpdate = async () => {
-    console.log("checking for update");
     try {
       setChecking(true);
 
       const update = await check();
 
       if (update && update.version) {
-        console.log("update", update);
-
         console.log(
           `found update ${update.version} from ${update.date} with notes ${update.body}`
         );
@@ -65,8 +62,6 @@ export function useUpdaterDownload() {
       let contentLength = 0;
 
       await update.downloadAndInstall(async (event) => {
-        console.log("download progress", event);
-
         switch (event.event) {
           case "Started":
             contentLength = event.data.contentLength as number;
@@ -86,8 +81,6 @@ export function useUpdaterDownload() {
       await relaunch();
     } catch (err) {
       toast.error("更新安装失败");
-      console.log(err);
-
       console.error(err instanceof Error ? err.message : "更新安装失败");
       setProgress(0);
     } finally {

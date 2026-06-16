@@ -46,12 +46,29 @@ pub fn default(app_handle: &tauri::AppHandle) {
     let timer_handle = app_handle.clone();
     let timer_thread = thread::Builder::new()
         .name("timer-thread".into())
-        .spawn(move || loop {
-            if !is_running.load(Ordering::SeqCst) {
-                thread::sleep(Duration::from_millis(100));
-                continue;
+        .spawn(move || {
+            use std::panic;
+            loop {
+                if !is_running.load(Ordering::SeqCst) {
+                    thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+                let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                    run_timer(&timer_handle, &is_running);
+                }));
+                if let Err(e) = result {
+                    let msg = if let Some(s) = e.downcast_ref::<String>() {
+                        s.clone()
+                    } else if let Some(s) = e.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else {
+                        "unknown panic".to_string()
+                    };
+                    eprintln!("[timer-thread] PANIC: {}", msg);
+                    // Wait a bit before retrying to avoid tight crash loop
+                    thread::sleep(Duration::from_secs(5));
+                }
             }
-            run_timer(&timer_handle, &is_running);
         })
         .expect("无法创建计时器线程");
 

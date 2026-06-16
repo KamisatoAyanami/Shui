@@ -2,12 +2,11 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { Toaster } from "@/components/ui/sonner";
 import { usePlatform } from "@/hooks/use-platform";
 import { sendReminderNotification } from "@/utils/notification";
 import { getGeneralConfig } from "@/utils/store";
+import { safeListen, safeInvoke } from "@/lib/tauri";
 
 export default function RootLayout({
   children,
@@ -17,20 +16,21 @@ export default function RootLayout({
   const { isMacOS } = usePlatform();
 
   useEffect(() => {
-    const unlisten = listen("timer-complete", async (event) => {
-      console.log("Timer completed", event);
+    let unlistenFn: (() => void) | undefined;
 
+    safeListen("timer-complete", async (event) => {
       if ((await getGeneralConfig()).isFullScreen) {
-        invoke("call_reminder");
+        safeInvoke("call_reminder");
       } else {
         sendReminderNotification();
-        invoke("reset_timer");
+        safeInvoke("reset_timer");
       }
-      // 这里可以添加倒计时结束后的处理逻辑
+    }).then((fn) => {
+      unlistenFn = fn;
     });
 
     return () => {
-      unlisten.then((unsubscribe) => unsubscribe());
+      unlistenFn?.();
     };
   }, []);
 

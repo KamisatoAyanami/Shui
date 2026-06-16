@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { platform } from "@tauri-apps/plugin-os";
 import { PLATFORM_OS } from "@/lib/constants";
+import { isTauri } from "@/lib/tauri";
 
 export function usePlatform() {
   const [isMacOS, setIsMacOS] = useState(false);
@@ -8,11 +8,18 @@ export function usePlatform() {
   const [isLinux, setIsLinux] = useState(false);
 
   useEffect(() => {
-    // 检查操作系统
-    const currentPlatform = platform();
-    setIsMacOS(currentPlatform === PLATFORM_OS.MACOS);
-    setIsWindows(currentPlatform === PLATFORM_OS.WINDOWS);
-    setIsLinux(currentPlatform === PLATFORM_OS.LINUX);
+    if (!isTauri()) return;
+
+    import("@tauri-apps/plugin-os")
+      .then(({ platform }) => {
+        const currentPlatform = platform();
+        setIsMacOS(currentPlatform === PLATFORM_OS.MACOS);
+        setIsWindows(currentPlatform === PLATFORM_OS.WINDOWS);
+        setIsLinux(currentPlatform === PLATFORM_OS.LINUX);
+      })
+      .catch(() => {
+        // Not running in Tauri — leave all platform flags as false
+      });
   }, []);
 
   return {

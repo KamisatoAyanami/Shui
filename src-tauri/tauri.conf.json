@@ -15,8 +15,8 @@
       "csp": null
     },
     "trayIcon": {
-      "iconPath": "icons/icon-tray.ico",
-      "iconAsTemplate": true,
+      "iconPath": "icons/icon-tray.png",
+      "iconAsTemplate": false,
       "title": "Shui",
       "id": "main-tray",
       "showMenuOnLeftClick": true
