@@ -1,0 +1,188 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  # ── Create draft release with changelog ─────────────────
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate changelog & create draft release
+        id: create_release
+        run: npx changelogithub --draft --name "${{ github.ref_name }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Build all platforms ─────────────────────────────────
+  release:
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: windows-latest
+            target: i686-pc-windows-msvc
+          - platform: windows-latest
+            target: aarch64-pc-windows-msvc
+
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - platform: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Rust ──────────────────────────────────────────
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: >-
+            ${{ matrix.platform == 'macos-latest'
+               && 'aarch64-apple-darwin,x86_64-apple-darwin'
+               || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: target
+
+      - name: Install rust target
+        run: rustup target add ${{ matrix.target }}
+
+      # ── Node.js ───────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Linux system deps ─────────────────────────────
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev \
+            libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+
+      # ── Linux ARM64 cross-compilation ─────────────────
+      - name: Add ARM64 architecture
+        if: matrix.platform == 'ubuntu-22.04' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo cp /etc/apt/sources.list /etc/apt/sources.list.backup
+          sudo tee /etc/apt/sources.list > /dev/null <<'SOURCES'
+          # x86_64
+          deb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
+          deb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse
+          deb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse
+          deb [arch=amd64,i386] http://security.ubuntu.com/ubuntu/ jammy-security main restricted universe multiverse
+          # ARM64
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-backports main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-security main restricted universe multiverse
+          SOURCES
+          sudo apt-get update
+
+      - name: Install ARM64 cross-compilation deps
+        if: matrix.platform == 'ubuntu-22.04' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          sudo apt-get install -y libwebkit2gtk-4.1-dev:arm64 libappindicator3-dev:arm64 librsvg2-dev:arm64
+          sudo apt-get install -y libgtk-3-dev:arm64
+
+      - name: Configure cross-compilation env
+        if: matrix.platform == 'ubuntu-22.04' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+          echo "PKG_CONFIG_SYSROOT_DIR=/" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      # ── Guard: disable updater signing if key is missing ─
+      - name: Configure Tauri updater signing
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "⚠️  TAURI_SIGNING_PRIVATE_KEY not set — disabling updater artifacts"
+            node -e "
+              const fs = require('fs');
+              const path = 'src-tauri/tauri.conf.json';
+              const conf = JSON.parse(fs.readFileSync(path, 'utf8'));
+              conf.bundle.createUpdaterArtifacts = false;
+              fs.writeFileSync(path, JSON.stringify(conf, null, 2));
+              console.log('✅ createUpdaterArtifacts set to false');
+            "
+          else
+            echo "✅ TAURI_SIGNING_PRIVATE_KEY is configured"
+          fi
+
+      # ── Build & upload to release ─────────────────────
+      - name: Build the app
+        id: build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Shui v__VERSION__"
+          releaseBody: "See changelog for details."
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }} ${{ matrix.target == 'aarch64-unknown-linux-gnu' && '--bundles deb,rpm' || '' }}
+
+  # ── Upload updater manifest ────────────────────────────
+  upload-assets:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Publish updater latest.json
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'test') && !contains(github.ref, 'beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/workflows/updater.mjs
