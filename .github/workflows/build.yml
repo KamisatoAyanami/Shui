@@ -9,71 +9,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ─── macOS ────────────────────────────────────────────
-  build-macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            arch: aarch64
-            label: Apple Silicon
-          - target: x86_64-apple-darwin
-            os: macos-13
-            arch: x64
-            label: Intel Chip
-
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Configure Tauri updater signing
-        shell: bash
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "⚠️  TAURI_SIGNING_PRIVATE_KEY not set — disabling updater artifacts"
-            node -e "
-              const fs = require('fs');
-              const path = 'src-tauri/tauri.conf.json';
-              const conf = JSON.parse(fs.readFileSync(path, 'utf8'));
-              conf.bundle.createUpdaterArtifacts = false;
-              fs.writeFileSync(path, JSON.stringify(conf, null, 2));
-              console.log('✅ createUpdaterArtifacts set to false');
-            "
-          else
-            echo "✅ TAURI_SIGNING_PRIVATE_KEY is configured"
-          fi
-
-      - name: Build Tauri (macOS ${{ matrix.label }})
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri build -- --target ${{ matrix.target }}
-
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Shui-macOS-${{ matrix.arch }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-          if-no-files-found: error
-
   # ─── Windows ──────────────────────────────────────────
   build-windows:
     strategy:
@@ -213,7 +148,7 @@ jobs:
 
   # ─── Summary (always runs) ────────────────────────────
   summary:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-windows, build-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -221,8 +156,7 @@ jobs:
         run: |
           echo "| Platform | Arch | Status |"
           echo "|----------|------|--------|"
-          for r in "${{ needs.build-macos.result }}" \
-                   "${{ needs.build-windows.result }}" \
+          for r in "${{ needs.build-windows.result }}" \
                    "${{ needs.build-linux.result }}"; do
             echo "| ... | ... | $r |"
           done
